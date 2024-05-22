@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+import rospy
+from duckietown_msgs.msg import Twist2DStamped
+from duckietown_msgs.msg import FSMState
+import math
+
+class SquareDriver:
+    def __init__(self):
+        # Class variables initialization
+        self.twist_command = Twist2DStamped()
+
+        # Initialize the ROS node
+        rospy.init_node('square_driver_node', anonymous=True)
+        
+        # Setup publisher and subscriber
+        self.command_publisher = rospy.Publisher('/duckieshop/car_cmd_switch_node/cmd', Twist2DStamped, queue_size=1)
+        rospy.Subscriber('/duckieshop/fsm_node/mode', FSMState, self.state_machine_callback, queue_size=1)
+        
+    # Callback to handle different FSM states
+    def state_machine_callback(self, msg):
+        rospy.loginfo("Current state: %s", msg.state)
+        if msg.state == "NORMAL_JOYSTICK_CONTROL":
+            self.halt_robot()
+        elif msg.state == "LANE_FOLLOWING":
+            rospy.sleep(1)  # Wait for a second to ensure node readiness
+            self.drive_square()
+
+    # Stops the robot by sending zero velocities
+    def halt_robot(self):
+        self.twist_command.header.stamp = rospy.Time.now()
+        self.twist_command.v = 0.0
+        self.twist_command.omega = 0.0
+        self.command_publisher.publish(self.twist_command)
+ 
+    # Keeps the node running to listen for callbacks
+    def execute(self):
+        rospy.spin()  # Keeps the node active until it's shut down
+
+    # Drives the robot in a square pattern and then stops
+    def drive_square(self):
+        side_length_m = 1.0  # Side length of the square in meters
+        linear_speed = 0.7   # Linear speed in meters per second
+        angular_speed = math.pi  # Angular speed in radians per second for quick 90-degree turns
+
+        for _ in range(4):  # Loop to create four sides of the square
+            # Move forward
+            self.twist_command.header.stamp = rospy.Time.now()
+            self.twist_command.v = linear_speed
+            self.twist_command.omega = 0.0
+            self.command_publisher.publish(self.twist_command)
+            rospy.loginfo("Driving forward!")
+            rospy.sleep(side_length_m / linear_speed)  # Time to travel one side length
+
+            # Brief stop
+            self.halt_robot()
+            rospy.sleep(0.1)  # Short pause
+
+            # Turn 90 degrees to the right
+            self.twist_command.header.stamp = rospy.Time.now()
+            self.twist_command.v = 0.0
+            self.twist_command.omega = -angular_speed
+            self.command_publisher.publish(self.twist_command)
+            rospy.loginfo("Turning 90 degrees!")
+            rospy.sleep(math.pi / 2 / angular_speed)  # Time to complete the turn
+
+            # Brief stop
+            self.halt_robot()
+            rospy.sleep(0.1)  # Short pause
+        
+        # Stop the robot after completing the square
+        self.halt_robot()
+
+if __name__ == '__main__':
+    try:
+        square_driver = SquareDriver()
+        square_driver.execute()
+    except rospy.ROSInterruptException:
+        pass
